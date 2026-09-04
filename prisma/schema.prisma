@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// Phase 2 uses only the User model below.
+// The remaining models are here so the schema
+// matches the Phase 1 design and future phases
+// don't require restructuring existing tables.
+// ─────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role     @default(INSTRUCTOR)
+  createdAt    DateTime @default(now())
+
+  exams        Exam[]
+}
+
+enum Role {
+  INSTRUCTOR
+  STUDENT
+}
+
+model Exam {
+  id                String   @id @default(cuid())
+  title             String
+  passingPercentage Float    @default(40)
+  createdAt         DateTime @default(now())
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id])
+
+  questions       Question[]
+  submissionJobs  SubmissionJob[]
+  submissions     Submission[]
+  studentResults  StudentResult[]
+  analytics       ExamAnalytics?
+}
+
+model Question {
+  id     String @id @default(cuid())
+  examId String
+  exam   Exam   @relation(fields: [examId], references: [id])
+
+  questionNumber Int
+  correctOption  String
+  marks          Float
+
+  questionResults QuestionResult[]
+
+  @@unique([examId, questionNumber])
+}
+
+model SubmissionJob {
+  id     String @id @default(cuid())
+  examId String
+  exam   Exam   @relation(fields: [examId], references: [id])
+
+  status        JobStatus @default(PENDING)
+  totalRows     Int       @default(0) // raw submission rows uploaded
+  processedRows Int       @default(0) // students graded so far (Phase 5 progress)
+  studentsTotal Int? // distinct valid students to grade — denominator for processedRows
+  errorMessage  String? // set when status = FAILED
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  submissions Submission[]
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model Submission {
+  id     String        @id @default(cuid())
+  examId String
+  exam   Exam          @relation(fields: [examId], references: [id])
+  jobId  String
+  job    SubmissionJob @relation(fields: [jobId], references: [id])
+
+  studentId      String
+  studentName    String?
+  questionNumber Int
+  selectedOption String?
+
+  validationStatus ValidationStatus @default(VALID)
+  errorReason      String?
+
+  createdAt DateTime @default(now())
+}
+
+enum ValidationStatus {
+  VALID
+  INVALID
+  DUPLICATE
+}
+
+model StudentResult {
+  id     String @id @default(cuid())
+  examId String
+  exam   Exam   @relation(fields: [examId], references: [id])
+
+  studentId   String
+  studentName String?
+
+  totalScore     Float
+  maxScore       Float
+  percentage     Float
+  percentileRank Float?
+  passed         Boolean
+
+  questionResults QuestionResult[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([examId, studentId])
+}
+
+model QuestionResult {
+  id              String        @id @default(cuid())
+  studentResultId String
+  studentResult   StudentResult @relation(fields: [studentResultId], references: [id])
+
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id])
+
+  selectedOption String?
+  isCorrect      Boolean
+  isUnattempted  Boolean
+}
+
+model ExamAnalytics {
+  id     String @id @default(cuid())
+  examId String @unique
+  exam   Exam   @relation(fields: [examId], references: [id])
+
+  averageScore      Float
+  medianScore       Float
+  highestScore      Float
+  lowestScore       Float
+  standardDeviation Float
+  passCount         Int
+  failCount         Int
+
+  updatedAt DateTime @updatedAt
+}
